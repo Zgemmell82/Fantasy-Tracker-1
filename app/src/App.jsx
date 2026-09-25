@@ -101,7 +101,8 @@ export default function App() {
     if (c.source === 'sleeper') {
       let leagueId = c.leagueId;
       if (!leagueId) {
-        const hit = await matchSleeperLeague(sleeperUser, league);
+        const taken = LEAGUE_NAMES.filter(n => n !== league && conn[n] && conn[n].source === 'sleeper' && conn[n].leagueId).map(n => conn[n].leagueId);
+        const hit = await matchSleeperLeague(sleeperUser, league, taken);
         setConn(league, hit);
         leagueId = hit.leagueId;
       }
@@ -131,7 +132,7 @@ export default function App() {
       if (!isLinked(conn[n])) return false;
       if (!auto) return true;
       const s = synced[n + ':' + week];
-      return !s || Date.now() - s.at > RESYNC_MS;
+      return !s || !s.ok || Date.now() - s.at > RESYNC_MS;
     });
     if (!targets.length) {
       if (!auto) flash('No connected leagues yet — tap Connect on a league.');
@@ -199,6 +200,8 @@ export default function App() {
       {connFor && <ConnectSheet league={connFor} week={week} conn={db.conn[connFor] || { source: 'manual' }}
         sleeperUser={db.sleeperUser} setSleeperUser={u => setDb(prev => ({ ...prev, sleeperUser: u }))}
         setConn={patch => setConn(connFor, patch)}
+        syncErr={(db.synced[connFor + ':' + week] || {}).err}
+        takenIds={LEAGUE_NAMES.filter(n => n !== connFor && db.conn[n] && db.conn[n].source === 'sleeper').map(n => db.conn[n].leagueId).filter(Boolean)}
         testEspn={async c => { const res = await syncEspn(c.leagueId, c.teamId, week); setLeague(week, connFor, res, 'espn'); markSynced(connFor + ':' + week, { ok: true }); return res; }}
         onClose={closeConn} />}
 
@@ -352,7 +355,7 @@ function EditSheet({ league, week, lineup, onEdit, onClose }) {
   );
 }
 
-function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn, testEspn, onClose }) {
+function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn, syncErr, takenIds, testEspn, onClose }) {
   const [sleeperList, setSleeperList] = useState(null);
   const [sleeperMsg, setSleeperMsg] = useState('');
   const [espnMsg, setEspnMsg] = useState('');
@@ -364,9 +367,12 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
     try {
       const list = await sleeperLeagues(sleeperUser);
       setSleeperList(list);
-      setSleeperMsg(list.length ? 'Tap the league that matches ' + league + '.' : 'No ' + SEASON + ' leagues on that account.');
+      setSleeperMsg(list.length ? 'Tap your ' + league + ' league.' : 'No ' + SEASON + ' leagues on that account.');
     } catch (e) { setSleeperMsg(e.message); }
   };
+
+  // List the account's leagues straight away so picking one is a single tap.
+  useEffect(() => { if (c.source === 'sleeper') findSleeper(); }, [c.source]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runEspn = async () => {
     if (!c.leagueId || !c.teamId) { setEspnMsg('Enter both IDs.'); return; }
@@ -410,12 +416,15 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
                 <button className="btn btn-ink" style={{ flex: 'none', padding: '15px 14px' }} onClick={findSleeper}>Find leagues</button>
               </div>
             </div>
-            <div className="msg">{sleeperMsg || (c.leagueId ? 'Linked to ' + (c.name || 'Sleeper league ' + c.leagueId) + '.' : 'Matched by name on the next sync.')}</div>
+            {c.leagueId
+              ? <div className="msg ok">Linked to {c.name || 'Sleeper league ' + c.leagueId}.</div>
+              : syncErr && <div className="msg err">{syncErr}</div>}
+            <div className="msg">{sleeperMsg}</div>
             {(sleeperList || []).map(s => (
-              <button key={s.league_id} className={'pick' + (c.leagueId === s.league_id ? ' on' : '')}
-                onClick={() => { setConn({ leagueId: s.league_id, name: s.name }); setSleeperMsg('Linked to ' + s.name + '.'); }}>
+              <button key={s.league_id} className={'pick' + (c.leagueId === s.league_id ? ' on' : '')} disabled={takenIds.includes(s.league_id)} style={takenIds.includes(s.league_id) ? { opacity: 0.45 } : null}
+                onClick={() => { setConn({ leagueId: s.league_id, name: s.name }); setSleeperMsg('Saved. Tap Done to pull this week\'s lineups.'); }}>
                 <span className="pick-name">{s.name}</span>
-                <span className="pick-meta">{s.total_rosters || ''} teams</span>
+                <span className="pick-meta">{takenIds.includes(s.league_id) ? 'Linked to another league' : (s.total_rosters || '') + ' teams'}</span>
               </button>
             ))}
             <div className="note">Sleeper's API is public and read-only — no password needed. Starters for both teams refresh every time you open the app.</div>

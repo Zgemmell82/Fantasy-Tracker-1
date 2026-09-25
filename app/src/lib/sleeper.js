@@ -25,17 +25,41 @@ export async function sleeperLeagues(username) {
   return (await sj('user/' + uid + '/leagues/nfl/' + SEASON)) || [];
 }
 
-const initials = s => s.split(/[^a-z0-9]+/i).filter(Boolean).map(w => w[0]).join('').toLowerCase();
+const STOP = new Set(['the', 'of', 'a', 'an', 'and', 'my', 'our']);
+// "The DynastyFootball League 2026" -> ['the', 'dynasty', 'football', 'league', '2026']
+const words = s => String(s || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const initials = ws => ws.map(w => w[0]).join('');
 
-// Finds the Sleeper league whose name contains, or whose initials spell, our league's short name.
-export async function matchSleeperLeague(username, league) {
-  const key = league.toLowerCase();
-  const hits = (await sleeperLeagues(username)).filter(l => {
-    const nm = String(l.name || '').toLowerCase();
-    return nm.includes(key) || initials(nm) === key;
-  });
-  if (hits.length !== 1) throw new Error('Couldn\'t match ' + league + ' to a Sleeper league. Tap Connect and pick it once.');
-  return { leagueId: hits[0].league_id, name: hits[0].name };
+// How well a Sleeper league name fits one of our short names (0 = not at all).
+export function leagueScore(name, short) {
+  const key = short.toLowerCase();
+  const ws = words(name);
+  const core = ws.filter(w => !/^\d+$/.test(w));
+  const squashed = ws.join('');
+  if (ws.includes(key)) return 5;
+  if (initials(core) === key) return 4;
+  if (initials(core.filter(w => !STOP.has(w))) === key || initials(core.filter(w => w !== 'the')) === key) return 4;
+  if (squashed.includes(key)) return 3;
+  if (initials(core).includes(key)) return 2;
+  return 0;
+}
+
+// Picks the best-fitting league, skipping ones already linked to our other leagues.
+export function pickLeague(list, short, takenIds = []) {
+  const scored = list
+    .filter(l => !takenIds.includes(l.league_id))
+    .map(l => ({ l, s: leagueScore(l.name, short) }))
+    .filter(x => x.s > 0)
+    .sort((a, b) => b.s - a.s);
+  if (!scored.length || (scored[1] && scored[1].s === scored[0].s)) return null;
+  return scored[0].l;
+}
+
+export async function matchSleeperLeague(username, league, takenIds) {
+  const list = await sleeperLeagues(username);
+  const hit = pickLeague(list, league, takenIds);
+  if (!hit) throw new Error('Couldn\'t tell which Sleeper league is ' + league + '. Tap Connect and pick it once.');
+  return { leagueId: hit.league_id, name: hit.name };
 }
 
 const isTeamDef = id => /^[A-Z]{2,3}$/.test(id);
