@@ -17,20 +17,32 @@ export function espnStarters(side) {
     });
 }
 
-// Only works for leagues set to public; ESPN rejects anonymous reads of private leagues.
-export async function syncEspn(leagueId, teamId, week) {
-  const url = 'https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/' + SEASON + '/segments/0/leagues/' + leagueId +
+// Public leagues are read directly. Private ones go through your ESPN helper (see espn-helper/),
+// which adds your ESPN login cookies, because a web app can't send them itself.
+export function espnUrl(leagueId, week, helper) {
+  const base = helper ? String(helper).trim().replace(/\/+$/, '') : 'https://lm-api-reads.fantasy.espn.com';
+  return base + '/apis/v3/games/ffl/seasons/' + SEASON + '/segments/0/leagues/' + leagueId +
     '?view=mMatchup&view=mMatchupScore&scoringPeriodId=' + week;
+}
+
+export async function syncEspn(leagueId, teamId, week, helper) {
+  const url = espnUrl(leagueId, week, helper);
   let j;
   try {
     const r = await fetch(url, { credentials: 'omit' });
-    if (r.status === 401 || r.status === 403) throw new Error('private');
-    if (!r.ok) throw new Error('ESPN ' + r.status);
+    if (r.status === 401 || r.status === 403) {
+      const why = helper ? ((await r.json().catch(() => ({}))).error || '') : '';
+      throw new Error(helper ? (why || 'ESPN turned down your cookies. Copy fresh espn_s2 and SWID values into the helper.') : 'private');
+    }
+    if (!r.ok) throw new Error((helper ? 'ESPN helper ' : 'ESPN ') + r.status);
     j = await r.json();
   } catch (e) {
-    throw new Error(e.message === 'private' || e.name === 'TypeError'
-      ? 'ESPN blocked the request. The league must be set to public, otherwise edit the lineup by hand.'
-      : e.message);
+    if (e.message === 'private' || e.name === 'TypeError') {
+      throw new Error(helper
+        ? 'Couldn\'t reach your ESPN helper. Check the helper link and its ALLOWED_ORIGIN setting.'
+        : 'ESPN blocked the request. For a private league, turn on "Private league" in Connect and add your ESPN helper.');
+    }
+    throw e;
   }
   const tid = Number(teamId);
   const g = (j.schedule || []).find(s => s.matchupPeriodId === week && ((s.home && s.home.teamId === tid) || (s.away && s.away.teamId === tid)));

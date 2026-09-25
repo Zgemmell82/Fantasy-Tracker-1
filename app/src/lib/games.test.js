@@ -33,7 +33,7 @@ test('a new week carries over my starters but not the opponent', () => {
   const w2 = seedWeek(2, { 1: w1 });
   assert.equal(w2.RDL.mine.length, w1.RDL.mine.length);
   assert.equal(w2.RDL.opp.length, 0);
-  assert.equal(w2.Breezewood, undefined);
+  assert.equal(w2.Breezewood.mine.length, w1.Breezewood.mine.length);
 });
 
 test('ESPN starters skip bench and IR and name defenses', () => {

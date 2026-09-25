@@ -20,6 +20,7 @@ npm run build    # production build in dist/
 - Built-in connections are in `src/App.jsx` (`DEFAULT_CONN`):
   - RDL and DFL come from Sleeper (user `Uncutgems82`). They're matched to Sleeper leagues by name or initials; if that fails, pick the right league once under Connect.
   - Deloitte comes from ESPN (league 308619009, team 1). This works only if the league is public.
+  - Breezewood is a private ESPN league. It syncs through the ESPN helper once you set it up (see `../espn-helper/README.md`) and enter its IDs under Connect.
 - Connected leagues sync when the app opens, when you switch weeks and when it returns to the foreground, at most once every 15 minutes. **Sync** in the header forces a refresh.
 - Everything is saved in the browser's `localStorage` on the device, under `ff-tracker-v3`. A week you haven't updated starts from last week's starters.
 

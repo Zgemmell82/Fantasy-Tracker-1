@@ -7,11 +7,17 @@ import { groupByGame } from './lib/games.js';
 import { matchSleeperLeague, sleeperLeagues, syncSleeper } from './lib/sleeper.js';
 import { syncEspn } from './lib/espn.js';
 
+function syncEspnFor(c, week, helper) {
+  if (c.private && !helper) return Promise.reject(new Error('Private league: add your ESPN helper link under Connect.'));
+  return syncEspn(c.leagueId, c.teamId, week, c.private ? helper : '');
+}
+
 const DEFAULT_USER = 'Uncutgems82';
 const DEFAULT_CONN = {
   RDL: { source: 'sleeper' },
   DFL: { source: 'sleeper' },
-  Deloitte: { source: 'espn', leagueId: '308619009', teamId: '1' }
+  Deloitte: { source: 'espn', leagueId: '308619009', teamId: '1' },
+  Breezewood: { source: 'espn', private: true }
 };
 const SRC_NAME = { sleeper: 'Sleeper', espn: 'ESPN', manual: 'By hand' };
 const RESYNC_MS = 15 * 60000;
@@ -33,11 +39,17 @@ function initialDb() {
   const week = currentWeek();
   const data = s.data || {};
   if (!data[week]) data[week] = seedWeek(week, data);
+  // Weeks saved before a league was added get that league's starting lineup.
+  Object.keys(data).forEach(w => {
+    const missing = LEAGUE_NAMES.filter(n => !data[w][n]);
+    if (missing.length) { const seed = seedWeek(Number(w), data); missing.forEach(n => { data[w][n] = seed[n]; }); }
+  });
   return {
     week, data,
     scored: s.scored || {},
     conn: mergeConn(s.conn || {}),
     sleeperUser: s.sleeperUser || DEFAULT_USER,
+    espnHelper: s.espnHelper || '',
     synced: s.synced || {}
   };
 }
@@ -78,7 +90,8 @@ export default function App() {
     setDb(prev => {
       const data = { ...prev.data };
       const wk = { ...(data[prev.week] || seedWeek(prev.week, data)) };
-      const l = { mine: [...wk[league].mine], opp: [...wk[league].opp] };
+      const cur = wk[league] || { mine: [], opp: [] };
+      const l = { mine: [...cur.mine], opp: [...cur.opp] };
       fn(l);
       wk[league] = { ...l, how: 'manual', at: Date.now() };
       data[prev.week] = wk;
@@ -108,7 +121,7 @@ export default function App() {
       }
       return syncSleeper(sleeperUser, leagueId, week);
     }
-    return syncEspn(c.leagueId, c.teamId, week);
+    return syncEspnFor(c, week, dbRef.current.espnHelper);
   }, [setConn]);
 
   const syncOne = useCallback(async (league, week) => {
@@ -202,7 +215,8 @@ export default function App() {
         setConn={patch => setConn(connFor, patch)}
         syncErr={(db.synced[connFor + ':' + week] || {}).err}
         takenIds={LEAGUE_NAMES.filter(n => n !== connFor && db.conn[n] && db.conn[n].source === 'sleeper').map(n => db.conn[n].leagueId).filter(Boolean)}
-        testEspn={async c => { const res = await syncEspn(c.leagueId, c.teamId, week); setLeague(week, connFor, res, 'espn'); markSynced(connFor + ':' + week, { ok: true }); return res; }}
+        espnHelper={db.espnHelper} setEspnHelper={u => setDb(prev => ({ ...prev, espnHelper: u.trim() }))}
+        testEspn={async c => { const res = await syncEspnFor(c, week, db.espnHelper); setLeague(week, connFor, res, 'espn'); markSynced(connFor + ':' + week, { ok: true }); return res; }}
         onClose={closeConn} />}
 
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -355,7 +369,7 @@ function EditSheet({ league, week, lineup, onEdit, onClose }) {
   );
 }
 
-function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn, syncErr, takenIds, testEspn, onClose }) {
+function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn, syncErr, takenIds, espnHelper, setEspnHelper, testEspn, onClose }) {
   const [sleeperList, setSleeperList] = useState(null);
   const [sleeperMsg, setSleeperMsg] = useState('');
   const [espnMsg, setEspnMsg] = useState('');
@@ -443,9 +457,24 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
                 <input className="input" value={c.teamId || ''} onChange={e => setConn({ teamId: e.target.value.replace(/\D/g, '') })} inputMode="numeric" placeholder="e.g. 4" />
               </label>
             </div>
+            <button className={'toggle' + (c.private ? ' on' : '')} role="switch" aria-checked={!!c.private} onClick={() => setConn({ private: !c.private })}>
+              <span className="toggle-box" aria-hidden="true">{c.private ? '✓' : ''}</span>
+              <span>
+                <span className="toggle-t">Private league</span>
+                <span className="toggle-d">Reads the league through your ESPN helper, which holds your ESPN login cookies.</span>
+              </span>
+            </button>
+            {c.private && (
+              <label>
+                <div className="field-l">ESPN helper link</div>
+                <input className="input" value={espnHelper} onChange={e => setEspnHelper(e.target.value)} inputMode="url" placeholder="https://espn-helper.you.workers.dev" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
+              </label>
+            )}
             <button className="btn btn-ink" onClick={runEspn}>Test connection</button>
             <div className={'msg ' + (/^Connected/.test(espnMsg) ? 'ok' : 'err')}>{espnMsg}</div>
-            <div className="note">Both IDs are in your team page URL on fantasy.espn.com, after "leagueId" and "teamId". ESPN only shares lineups for leagues set to public (League → Settings → "Make league viewable to public"). Private leagues have to be edited by hand. Syncs week {week}.</div>
+            <div className="note">Both IDs are in your team page URL on fantasy.espn.com, after "leagueId" and "teamId". {c.private
+                ? 'The helper is a small free Cloudflare Worker you set up once; the steps are in espn-helper/README.md in the app\'s GitHub repo. Your cookies stay in Cloudflare, not on this phone.'
+                : 'ESPN only shares lineups for leagues set to public (League → Settings → "Make league viewable to public"). For a private league, turn on Private league above.'} Syncs week {week}.</div>
           </div>
         )}
       </div>

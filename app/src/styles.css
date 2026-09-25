@@ -174,3 +174,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .btn-ink:hover { background: var(--color-neutral-800); }
   .result:hover { background: var(--color-neutral-200); }
 }
+
+.toggle { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px; border: 1px solid var(--color-divider); }
+.toggle-box { flex: none; width: 20px; height: 20px; border: 2px solid var(--color-text); display: grid; place-items: center; font-weight: 800; font-size: 12px; line-height: 1; }
+.toggle.on .toggle-box { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-bg); }
+.toggle-t { display: block; font-weight: 800; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.toggle-d { display: block; font-size: 11px; line-height: 1.45; color: var(--color-neutral-600); margin-top: 3px; }
