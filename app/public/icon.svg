@@ -1,6 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#f3f2f2"/>
-  <rect x="0" y="376" width="512" height="136" fill="#ec3013"/>
-  <rect x="0" y="360" width="512" height="16" fill="#201e1d"/>
-  <text x="56" y="300" font-family="Archivo, Helvetica, Arial, sans-serif" font-weight="800" font-size="230" letter-spacing="-10" fill="#201e1d">FF</text>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5ff2cb"/>
+      <stop offset="1" stop-color="#1fc99c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#0d1119"/>
+  <g transform="rotate(-45 256 256)">
+    <ellipse cx="256" cy="256" rx="178" ry="104" fill="url(#g)"/>
+    <path d="M138 214 a150 104 0 0 0 0 84 M374 214 a150 104 0 0 1 0 84" stroke="#0d1119" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <path d="M186 256 H326" stroke="#0d1119" stroke-width="14" stroke-linecap="round"/>
+    <path d="M214 236 v40 M242 236 v40 M270 236 v40 M298 236 v40" stroke="#0d1119" stroke-width="12" stroke-linecap="round"/>
+  </g>
 </svg>

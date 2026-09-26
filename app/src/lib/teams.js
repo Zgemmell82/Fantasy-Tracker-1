@@ -18,6 +18,8 @@ export function mkPlayer(p) {
     id: 'p' + Date.now().toString(36) + (seq++).toString(36) + Math.random().toString(36).slice(2, 6),
     name: p.n || p.name || '',
     pos: String(p.p || p.pos || '').toUpperCase(),
-    team: normTeam(p.t || p.team)
+    team: normTeam(p.t || p.team),
+    ...(p.sid ? { sid: p.sid } : {}),
+    ...(p.eid ? { eid: p.eid } : {})
   };
 }

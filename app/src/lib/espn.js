@@ -13,7 +13,9 @@ export function espnStarters(side) {
       const p = (e.playerPoolEntry && e.playerPoolEntry.player) || {};
       const pos = ESPN_POS[p.defaultPositionId] || '';
       const t = ESPN_TEAM[p.proTeamId] || '';
-      return { n: pos === 'DEF' ? defName(t) : p.fullName, p: pos, t };
+      const out = { n: pos === 'DEF' ? defName(t) : p.fullName, p: pos, t };
+      if (p.id && pos !== 'DEF') out.eid = p.id;
+      return out;
     });
 }
 

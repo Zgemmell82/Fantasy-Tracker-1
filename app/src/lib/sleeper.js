@@ -80,7 +80,7 @@ async function resolvePlayers(ids) {
   return ids.map(id => {
     if (isTeamDef(id)) return { n: defName(id), p: 'DEF', t: normTeam(id) };
     const c = cache[id];
-    return c ? { n: c.n, p: c.p, t: c.t } : { n: 'Player ' + id, p: '', t: '' };
+    return c ? { n: c.n, p: c.p, t: c.t, sid: id } : { n: 'Player ' + id, p: '', t: '' };
   });
 }
 

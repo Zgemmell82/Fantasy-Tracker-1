@@ -3,6 +3,7 @@ import { LEAGUE_NAMES, PLAYERS } from './data.js';
 import { LS, load, save } from './lib/store.js';
 import { SEASON, WEEKS, currentWeek, seedWeek } from './lib/season.js';
 import { mkPlayer } from './lib/teams.js';
+import { Avatar, Icon, PosChip, Segmented, Sheet, Switch, TeamLogo, leagueColor } from './ui.jsx';
 import { groupByGame } from './lib/games.js';
 import { matchSleeperLeague, sleeperLeagues, syncSleeper } from './lib/sleeper.js';
 import { syncEspn } from './lib/espn.js';
@@ -183,28 +184,34 @@ export default function App() {
 
   const { week } = db;
   const wk = db.data[week] || {};
+  const scoredWeek = db.scored[week] || {};
 
   return (
     <div className="app">
       <header className="head">
-        <div className="title-row">
-          <h1 className="title">{screen === 'games' ? 'Week ' + week : 'Leagues'}</h1>
-          <button className="link-action sync" disabled={syncing} onClick={() => syncAll(false)}>{syncing ? 'Syncing…' : 'Sync'}</button>
+        <div className="head-row">
+          <div>
+            <div className="eyebrow">{SEASON} season</div>
+            <h1 className="title">{screen === 'games' ? 'Week ' + week : 'Leagues'}</h1>
+          </div>
+          <button className={'icon-btn' + (syncing ? ' spinning' : '')} disabled={syncing} onClick={() => syncAll(false)} aria-label="Sync connected leagues">
+            <Icon.refresh size={19} />
+          </button>
         </div>
-        <WeekChips week={week} onPick={setWeek} />
+        <WeekPills week={week} onPick={setWeek} />
       </header>
 
-      <main className="body sc">
+      <main className="body" key={screen}>
         {screen === 'games'
-          ? <Games week={week} wk={wk} scored={db.scored[week] || {}} filter={filter} setFilter={setFilter} onToggle={toggleScored} />
+          ? <Games week={week} wk={wk} scored={scoredWeek} filter={filter} setFilter={setFilter} onToggle={toggleScored} />
           : <Leagues week={week} wk={wk} conn={db.conn} synced={db.synced} syncing={syncing}
               onSync={async n => { if (await syncOne(n, week)) flash(n + ' synced'); }}
               onEdit={setEditFor} onConnect={setConnFor} />}
       </main>
 
-      <nav className="tabs">
-        <button className={screen === 'games' ? 'on' : ''} onClick={() => setScreen('games')}>By game</button>
-        <button className={screen === 'leagues' ? 'on' : ''} onClick={() => setScreen('leagues')}>Leagues</button>
+      <nav className="tabbar">
+        <button className={screen === 'games' ? 'on' : ''} onClick={() => setScreen('games')}><Icon.football size={23} /><span>Games</span></button>
+        <button className={screen === 'leagues' ? 'on' : ''} onClick={() => setScreen('leagues')}><Icon.trophy size={23} /><span>Leagues</span></button>
       </nav>
 
       {editFor && <EditSheet league={editFor} week={week} lineup={wk[editFor] || { mine: [], opp: [] }}
@@ -219,109 +226,160 @@ export default function App() {
         testEspn={async c => { const res = await syncEspnFor(c, week, db.espnHelper); setLeague(week, connFor, res, 'espn'); markSynced(connFor + ':' + week, { ok: true }); return res; }}
         onClose={closeConn} />}
 
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && <div className="toast" role="status" key={toast}>{toast}</div>}
     </div>
   );
 }
 
-function WeekChips({ week, onPick }) {
+function WeekPills({ week, onPick }) {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current && ref.current.querySelector('.on');
-    if (el) el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    if (el) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [week]);
-  const chips = [];
+  const now = currentWeek();
+  const pills = [];
   for (let w = 1; w <= WEEKS; w++) {
-    chips.push(<button key={w} className={'chip' + (w === week ? ' on' : '')} onClick={() => onPick(w)}>W{w}</button>);
+    pills.push(
+      <button key={w} className={'wpill' + (w === week ? ' on' : '') + (w === now ? ' now' : '')} onClick={() => onPick(w)} aria-label={'Week ' + w}>
+        {w}
+      </button>
+    );
   }
-  return <div className="weeks sc" ref={ref}>{chips}</div>;
+  return <div className="weeks sc" ref={ref}><span className="weeks-l">WK</span>{pills}</div>;
+}
+
+const TagList = ({ leagues }) => (
+  <span className="ltags">
+    {leagues.map(l => <span key={l} className="ltag" style={{ '--lc': leagueColor(l, LEAGUE_NAMES) }}>{l}</span>)}
+  </span>
+);
+
+function PlayerRow({ p, done, onToggle }) {
+  return (
+    <button className={'prow' + (done ? ' done' : '')} onClick={onToggle} aria-pressed={done}>
+      <Avatar p={p} />
+      <span className="prow-main">
+        <span className="prow-name">{p.name}</span>
+        <span className="prow-meta"><PosChip pos={p.pos} /><span>{p.team}</span></span>
+      </span>
+      <TagList leagues={p.leagues} />
+      <span className="prow-check" aria-hidden="true">{done ? <Icon.check size={14} sw={3} /> : null}</span>
+    </button>
+  );
+}
+
+function StatusPill({ status }) {
+  if (status === 'Live') return <span className="spill live"><i />Live</span>;
+  return <span className={'spill' + (status === 'Final' ? ' final' : '')}>{status}</span>;
 }
 
 function Games({ week, wk, scored, filter, setFilter, onToggle }) {
   const { games, bye } = groupByGame(week, wk);
   const shown = games.filter(g => filter === 'all' || g.mine.length);
   if (filter === 'all' && (bye.mine.length || bye.theirs.length)) {
-    shown.push({ key: 'bye', title: 'Bye or unmatched', time: 'No game found for these teams in week ' + week, status: 'Check', ...bye });
+    shown.push({ key: 'bye', bye: true, title: 'Bye or unmatched', time: 'No game this week for these teams', status: 'Check', ...bye });
   }
+  const all = shown.flatMap(g => g.mine.concat(g.theirs));
   const yours = shown.reduce((s, g) => s + g.mine.length, 0);
   const against = shown.reduce((s, g) => s + g.theirs.length, 0);
-
-  const player = p => (
-    <button key={p.uid} className={'pl' + (scored[p.uid] ? ' done' : '')} onClick={() => onToggle(p.uid)}>
-      <div className="pl-name">{p.name}{p.leagues.length > 1 ? '  ×' + p.leagues.length : ''}</div>
-      <div className="pl-meta">{[p.pos, p.team, p.leagues.join(' · ')].filter(Boolean).join(' · ')}</div>
-    </button>
-  );
+  const done = all.filter(p => scored[p.uid]).length;
 
   return (
-    <div>
-      <div className="stats">
-        <div className="stat"><div className="stat-n">{shown.length}</div><div className="stat-l">Games</div></div>
-        <div className="stat"><div className="stat-n">{yours}</div><div className="stat-l">Yours</div></div>
-        <div className="stat"><div className="stat-n accent">{against}</div><div className="stat-l">Against</div></div>
+    <div className="stack">
+      <div className="card summary">
+        <div className="sum-cell"><span className="sum-n">{shown.filter(g => !g.bye).length}</span><span className="sum-l">Games</span></div>
+        <div className="sum-cell"><span className="sum-n mint">{yours}</span><span className="sum-l">Your starters</span></div>
+        <div className="sum-cell"><span className="sum-n coral">{against}</span><span className="sum-l">Against you</span></div>
+        <div className="sum-bar" aria-label={done + ' of ' + all.length + ' checked off'}>
+          <span style={{ width: (all.length ? (done / all.length) * 100 : 0) + '%' }} />
+        </div>
+        <div className="sum-foot">{done} of {all.length} checked off</div>
       </div>
-      <div className="seg2">
-        <button className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All games</button>
-        <button className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>Only mine</button>
-      </div>
-      {shown.map(g => (
-        <section key={g.key} className="game">
-          <div className="game-head">
-            <div className="game-title">{g.title}</div>
-            <div className={'badge' + (g.status === 'Live' ? ' hot' : '')}>{g.status}</div>
-          </div>
-          <div className="game-time">{g.time}</div>
-          <div className="sides">
-            <div className="side-mine">
-              <div className="side-h">You have</div>
-              {g.mine.map(player)}
-              {!g.mine.length && <div className="side-empty">—</div>}
+
+      <Segmented value={filter} onChange={setFilter} options={[['all', 'All games'], ['mine', 'My players']]} />
+
+      {shown.map(g => {
+        const [away, home] = g.bye ? [null, null] : g.key.split('@');
+        return (
+          <section key={g.key} className="card game">
+            <div className="game-head">
+              {g.bye
+                ? <div className="matchup"><span className="bye-t">{g.title}</span></div>
+                : <div className="matchup">
+                    <TeamLogo team={away} size={30} /><span className="abbr">{away}</span>
+                    <span className="at">@</span>
+                    <TeamLogo team={home} size={30} /><span className="abbr">{home}</span>
+                  </div>}
+              <StatusPill status={g.status} />
             </div>
-            <div className="side-theirs">
-              <div className="side-h">They have</div>
-              {g.theirs.map(player)}
-              {!g.theirs.length && <div className="side-empty">—</div>}
-            </div>
-          </div>
-        </section>
-      ))}
-      <div className="foot">
-        {shown.length ? 'Tap a player to cross them off once they\'ve played.' : 'No lineups for week ' + week + ' yet. Connect a league or edit it by hand.'}
-      </div>
+            <div className="game-time">{g.time}</div>
+            {g.mine.length > 0 && (
+              <div className="side">
+                <div className="side-h mint"><i />Your players</div>
+                {g.mine.map(p => <PlayerRow key={p.uid} p={p} done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+              </div>
+            )}
+            {g.theirs.length > 0 && (
+              <div className="side">
+                <div className="side-h coral"><i />Against you</div>
+                {g.theirs.map(p => <PlayerRow key={p.uid} p={p} done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      {shown.length
+        ? <p className="hint">Tap a player to check them off once their game is done.</p>
+        : <div className="card empty">
+            <Icon.football size={28} />
+            <div className="empty-t">No lineups for week {week}</div>
+            <div className="empty-d">Connect a league on the Leagues tab, or add players by hand.</div>
+          </div>}
     </div>
   );
 }
 
 function Leagues({ week, wk, conn, synced, syncing, onSync, onEdit, onConnect }) {
   return (
-    <div>
+    <div className="stack">
       {LEAGUE_NAMES.map(n => {
         const l = wk[n] || { mine: [], opp: [] };
         const c = conn[n] || { source: 'manual' };
         const sy = synced[n + ':' + week];
         const linked = isLinked(c);
-        let status = l.how === 'manual' ? 'Edited by hand' : l.how ? 'Pulled from ' + SRC_NAME[l.how] : 'Carried over — not updated for week ' + week;
-        if (l.at) status += ' · ' + new Date(l.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
         const failed = sy && !sy.ok && !(l.at > sy.at);
+        const when = l.at ? new Date(l.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+        const status = failed ? sy.err
+          : l.how === 'manual' ? 'Edited by hand · ' + when
+          : l.how ? 'Updated from ' + SRC_NAME[l.how] + ' · ' + when
+          : 'Using last week\'s lineup';
+        const StatusIcon = failed ? Icon.alert : l.how ? Icon.check : Icon.clock;
+        const color = leagueColor(n, LEAGUE_NAMES);
         return (
-          <section key={n} className="league">
+          <section key={n} className="card league">
             <div className="league-head">
-              <div className="league-name">{n}</div>
-              <div className={'badge' + (linked ? ' hot' : '')}>{linked ? SRC_NAME[c.source] : 'Manual'}</div>
-              <div className="league-counts">{l.mine.length} v {l.opp.length}</div>
+              <span className="lavatar" style={{ '--lc': color }}>{n.slice(0, 2)}</span>
+              <div className="league-id">
+                <div className="league-name">{n}</div>
+                <div className="league-src">
+                  {linked ? SRC_NAME[c.source] : 'Not connected'}
+                  {c.source === 'espn' && c.private ? <> · <Icon.lock size={11} sw={2.5} /> Private</> : null}
+                </div>
+              </div>
+              <div className="league-vs"><b>{l.mine.length}</b><span>vs</span><b>{l.opp.length}</b></div>
             </div>
-            <div className={'league-status' + (failed ? ' err' : '')}>{failed ? sy.err : status}</div>
-            <div className="actions">
-              {linked
-                ? <button className="btn btn-primary" disabled={syncing} onClick={() => onSync(n)}>Sync</button>
-                : null}
-              <button className={'btn' + (linked ? '' : ' btn-primary')} onClick={() => onEdit(n)}>Edit</button>
-              <button className="btn" onClick={() => onConnect(n)}>Connect</button>
+            <div className={'league-status' + (failed ? ' err' : l.how ? ' ok' : '')}><StatusIcon size={14} sw={2.5} /><span>{status}</span></div>
+            <div className="league-actions">
+              {linked && <button className="pill-btn primary" disabled={syncing} onClick={() => onSync(n)}><Icon.refresh size={15} sw={2.5} />Sync</button>}
+              <button className={'pill-btn' + (linked ? '' : ' primary')} onClick={() => onEdit(n)}><Icon.pencil size={15} sw={2.5} />Edit</button>
+              <button className="pill-btn" onClick={() => onConnect(n)}><Icon.link size={15} sw={2.5} />{linked ? 'Source' : 'Connect'}</button>
             </div>
           </section>
         );
       })}
-      <div className="foot">Each week is saved on this device. Connected leagues refresh automatically when you open the app; the rest you update by hand.</div>
+      <p className="hint">Lineups are saved on this phone. Connected leagues refresh whenever you open the app.</p>
     </div>
   );
 }
@@ -334,38 +392,35 @@ function EditSheet({ league, week, lineup, onEdit, onClose }) {
   const results = q.length < 2 ? [] : PLAYERS.filter(p => p.n.toLowerCase().includes(q)).slice(0, 6);
 
   return (
-    <div className="sheet" role="dialog" aria-label={'Edit ' + league}>
-      <div className="sheet-head">
-        <div className="title-row">
-          <h2 className="title">{league}</h2>
-          <button className="link-action" onClick={onClose}>Done</button>
-        </div>
-        <div className="subtitle">Week {week} · {list.length} players</div>
-      </div>
-      <div className="sheet-body sc">
-        <div className="seg2 tall">
-          <button className={side === 'mine' ? 'on' : ''} onClick={() => setSide('mine')}>Your starters</button>
-          <button className={side === 'opp' ? 'on red' : ''} onClick={() => setSide('opp')}>Opponent</button>
-        </div>
-        {list.map(p => (
-          <div key={p.id} className="row">
-            <div className="row-pos">{p.pos}</div>
-            <div className="row-name">{p.name}</div>
-            <div className="row-team">{p.team}</div>
-            <button className="x" aria-label={'Remove ' + p.name} onClick={() => onEdit(l => { l[side] = l[side].filter(x => x.id !== p.id); })}>×</button>
-          </div>
-        ))}
-        <div style={{ padding: '16px 18px 30px' }}>
-          <input className="input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Add a player by name" autoComplete="off" autoCorrect="off" />
+    <Sheet title={league} subtitle={'Week ' + week + ' lineup'} onClose={onClose} label={'Edit ' + league}>
+      <Segmented value={side} onChange={setSide} tone={v => v === 'opp' ? 'coral' : ''}
+        options={[['mine', 'My starters · ' + lineup.mine.length], ['opp', 'Opponent · ' + lineup.opp.length]]} />
+      <label className="search">
+        <Icon.search size={17} />
+        <input id="add-player" value={query} onChange={e => setQuery(e.target.value)} placeholder="Add a player" autoComplete="off" autoCorrect="off" enterKeyHint="search" />
+      </label>
+      {results.length > 0 && (
+        <div className="list">
           {results.map(p => (
-            <button key={p.n + p.t} className="result" onClick={() => { onEdit(l => { l[side] = [...l[side], mkPlayer(p)]; }); setQuery(''); }}>
-              <span className="result-name">{p.n}</span>
-              <span className="result-meta">{p.p} · {p.t}</span>
+            <button key={p.n + p.t} className="lrow" onClick={() => { onEdit(l => { l[side] = [...l[side], mkPlayer(p)]; }); setQuery(''); }}>
+              <Avatar p={{ pos: p.p, team: p.t }} size={34} />
+              <span className="lrow-main"><span className="lrow-name">{p.n}</span><span className="prow-meta"><PosChip pos={p.p} /><span>{p.t}</span></span></span>
+              <span className="round-btn add"><Icon.plus size={16} sw={2.5} /></span>
             </button>
           ))}
         </div>
+      )}
+      <div className="list">
+        {list.map(p => (
+          <div key={p.id} className="lrow">
+            <Avatar p={p} size={34} />
+            <span className="lrow-main"><span className="lrow-name">{p.name}</span><span className="prow-meta"><PosChip pos={p.pos} /><span>{p.team}</span></span></span>
+            <button className="round-btn remove" aria-label={'Remove ' + p.name} onClick={() => onEdit(l => { l[side] = l[side].filter(x => x.id !== p.id); })}><Icon.minus size={16} sw={2.5} /></button>
+          </div>
+        ))}
+        {!list.length && <div className="lrow muted">No players yet. Search above to add them.</div>}
       </div>
-    </div>
+    </Sheet>
   );
 }
 
@@ -373,6 +428,7 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
   const [sleeperList, setSleeperList] = useState(null);
   const [sleeperMsg, setSleeperMsg] = useState('');
   const [espnMsg, setEspnMsg] = useState('');
+  const [busy, setBusy] = useState(false);
   const c = conn;
 
   const findSleeper = async () => {
@@ -381,7 +437,7 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
     try {
       const list = await sleeperLeagues(sleeperUser);
       setSleeperList(list);
-      setSleeperMsg(list.length ? 'Tap your ' + league + ' league.' : 'No ' + SEASON + ' leagues on that account.');
+      setSleeperMsg(list.length ? '' : 'No ' + SEASON + ' leagues on that account.');
     } catch (e) { setSleeperMsg(e.message); }
   };
 
@@ -390,94 +446,88 @@ function ConnectSheet({ league, week, conn, sleeperUser, setSleeperUser, setConn
 
   const runEspn = async () => {
     if (!c.leagueId || !c.teamId) { setEspnMsg('Enter both IDs.'); return; }
-    setEspnMsg('Connecting…');
+    setBusy(true);
+    setEspnMsg('');
     try {
       const res = await testEspn(c);
       setEspnMsg('Connected — pulled ' + res.mine.length + ' + ' + res.opp.length + ' starters.');
     } catch (e) { setEspnMsg(e.message); }
+    setBusy(false);
   };
 
   const pickSource = s => setConn({ source: s, leagueId: s === c.source ? c.leagueId : '', teamId: s === c.source ? c.teamId : '' });
+  const ok = /^Connected/.test(espnMsg);
 
   return (
-    <div className="sheet" role="dialog" aria-label={'Connect ' + league} style={{ zIndex: 85 }}>
-      <div className="sheet-head">
-        <div className="title-row">
-          <h2 className="title">{league}</h2>
-          <button className="link-action" onClick={onClose}>Done</button>
-        </div>
-        <div className="subtitle">Where this league's lineups come from</div>
-      </div>
-      <div className="sheet-body sc">
-        <div className="src3">
-          {[['manual', 'By hand'], ['sleeper', 'Sleeper'], ['espn', 'ESPN']].map(([k, label]) => (
-            <button key={k} className={c.source === k ? 'on' : ''} onClick={() => pickSource(k)}>{label}</button>
-          ))}
-        </div>
+    <Sheet title={league} subtitle="Where this league's lineups come from" onClose={onClose} label={'Connect ' + league}>
+      <Segmented value={c.source} onChange={pickSource} options={[['sleeper', 'Sleeper'], ['espn', 'ESPN'], ['manual', 'By hand']]} />
 
-        {c.source === 'manual' && (
-          <div className="pane"><div className="note" style={{ fontSize: 12, color: 'var(--color-neutral-700)' }}>
-            Update this league each week by editing its players. Nothing is fetched automatically.
-          </div></div>
-        )}
+      {c.source === 'manual' && (
+        <p className="sheet-note">You'll update this league each week by editing its players. Nothing is fetched automatically.</p>
+      )}
 
-        {c.source === 'sleeper' && (
-          <div className="pane">
-            <div>
-              <div className="field-l">Sleeper username</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input className="input" style={{ flex: 1 }} value={sleeperUser} onChange={e => setSleeperUser(e.target.value)} placeholder="username" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
-                <button className="btn btn-ink" style={{ flex: 'none', padding: '15px 14px' }} onClick={findSleeper}>Find leagues</button>
-              </div>
+      {c.source === 'sleeper' && (
+        <>
+          <div className="field">
+            <label htmlFor="sleeper-user">Sleeper username</label>
+            <div className="field-row">
+              <input id="sleeper-user" className="input" value={sleeperUser} onChange={e => setSleeperUser(e.target.value)} placeholder="username" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
+              <button className="pill-btn" onClick={findSleeper}><Icon.search size={15} sw={2.5} />Find</button>
             </div>
-            {c.leagueId
-              ? <div className="msg ok">Linked to {c.name || 'Sleeper league ' + c.leagueId}.</div>
-              : syncErr && <div className="msg err">{syncErr}</div>}
-            <div className="msg">{sleeperMsg}</div>
-            {(sleeperList || []).map(s => (
-              <button key={s.league_id} className={'pick' + (c.leagueId === s.league_id ? ' on' : '')} disabled={takenIds.includes(s.league_id)} style={takenIds.includes(s.league_id) ? { opacity: 0.45 } : null}
-                onClick={() => { setConn({ leagueId: s.league_id, name: s.name }); setSleeperMsg('Saved. Tap Done to pull this week\'s lineups.'); }}>
-                <span className="pick-name">{s.name}</span>
-                <span className="pick-meta">{takenIds.includes(s.league_id) ? 'Linked to another league' : (s.total_rosters || '') + ' teams'}</span>
-              </button>
-            ))}
-            <div className="note">Sleeper's API is public and read-only — no password needed. Starters for both teams refresh every time you open the app.</div>
           </div>
-        )}
-
-        {c.source === 'espn' && (
-          <div className="pane">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-              <label>
-                <div className="field-l">League ID</div>
-                <input className="input" value={c.leagueId || ''} onChange={e => setConn({ leagueId: e.target.value.replace(/\D/g, '') })} inputMode="numeric" placeholder="e.g. 1234567" />
-              </label>
-              <label>
-                <div className="field-l">Your team ID</div>
-                <input className="input" value={c.teamId || ''} onChange={e => setConn({ teamId: e.target.value.replace(/\D/g, '') })} inputMode="numeric" placeholder="e.g. 4" />
-              </label>
+          {!c.leagueId && syncErr && <div className="banner err"><Icon.alert size={16} sw={2.5} /><span>{syncErr}</span></div>}
+          {sleeperMsg && <div className="sheet-note">{sleeperMsg}</div>}
+          {sleeperList && sleeperList.length > 0 && (
+            <div className="list">
+              <div className="list-h">Pick your {league} league</div>
+              {sleeperList.map(s => {
+                const taken = takenIds.includes(s.league_id);
+                const on = c.leagueId === s.league_id;
+                return (
+                  <button key={s.league_id} className={'lrow pick' + (on ? ' on' : '')} disabled={taken}
+                    onClick={() => { setConn({ leagueId: s.league_id, name: s.name }); setSleeperMsg('Saved. Tap Done to pull this week\'s lineups.'); }}>
+                    <span className="lrow-main">
+                      <span className="lrow-name">{s.name}</span>
+                      <span className="lrow-sub">{taken ? 'Linked to another league' : (s.total_rosters || '') + ' teams'}</span>
+                    </span>
+                    <span className={'radio' + (on ? ' on' : '')}>{on && <Icon.check size={13} sw={3.5} />}</span>
+                  </button>
+                );
+              })}
             </div>
-            <button className={'toggle' + (c.private ? ' on' : '')} role="switch" aria-checked={!!c.private} onClick={() => setConn({ private: !c.private })}>
-              <span className="toggle-box" aria-hidden="true">{c.private ? '✓' : ''}</span>
-              <span>
-                <span className="toggle-t">Private league</span>
-                <span className="toggle-d">Reads the league through your ESPN helper, which holds your ESPN login cookies.</span>
-              </span>
-            </button>
-            {c.private && (
-              <label>
-                <div className="field-l">ESPN helper link</div>
-                <input className="input" value={espnHelper} onChange={e => setEspnHelper(e.target.value)} inputMode="url" placeholder="https://espn-helper.you.workers.dev" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
-              </label>
-            )}
-            <button className="btn btn-ink" onClick={runEspn}>Test connection</button>
-            <div className={'msg ' + (/^Connected/.test(espnMsg) ? 'ok' : 'err')}>{espnMsg}</div>
-            <div className="note">Both IDs are in your team page URL on fantasy.espn.com, after "leagueId" and "teamId". {c.private
-                ? 'The helper is a small free Cloudflare Worker you set up once; the steps are in espn-helper/README.md in the app\'s GitHub repo. Your cookies stay in Cloudflare, not on this phone.'
-                : 'ESPN only shares lineups for leagues set to public (League → Settings → "Make league viewable to public"). For a private league, turn on Private league above.'} Syncs week {week}.</div>
+          )}
+          <p className="sheet-note">Sleeper is read-only and needs no password. Both lineups refresh when you open the app.</p>
+        </>
+      )}
+
+      {c.source === 'espn' && (
+        <>
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="espn-league">League ID</label>
+              <input id="espn-league" className="input" value={c.leagueId || ''} onChange={e => setConn({ leagueId: e.target.value.replace(/\D/g, '') })} inputMode="numeric" placeholder="1234567" />
+            </div>
+            <div className="field">
+              <label htmlFor="espn-team">Your team ID</label>
+              <input id="espn-team" className="input" value={c.teamId || ''} onChange={e => setConn({ teamId: e.target.value.replace(/\D/g, '') })} inputMode="numeric" placeholder="4" />
+            </div>
           </div>
-        )}
-      </div>
-    </div>
+          <div className="list">
+            <Switch on={c.private} onChange={v => setConn({ private: v })} label="Private league" hint="Read through your ESPN helper, which holds your ESPN login." />
+          </div>
+          {c.private && (
+            <div className="field">
+              <label htmlFor="espn-helper">ESPN helper link</label>
+              <input id="espn-helper" className="input" value={espnHelper} onChange={e => setEspnHelper(e.target.value)} inputMode="url" placeholder="https://espn-helper.you.workers.dev" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
+            </div>
+          )}
+          <button className="pill-btn primary wide" disabled={busy} onClick={runEspn}>{busy ? 'Connecting…' : 'Test connection'}</button>
+          {espnMsg && <div className={'banner ' + (ok ? 'ok' : 'err')}>{ok ? <Icon.check size={16} sw={2.5} /> : <Icon.alert size={16} sw={2.5} />}<span>{espnMsg}</span></div>}
+          <p className="sheet-note">Both IDs are in your team page's web address on fantasy.espn.com, after "leagueId=" and "teamId=". {c.private
+            ? 'The helper is a free Cloudflare Worker you set up once; the steps are in espn-helper/README.md in the app\'s GitHub repo.'
+            : 'Without the helper, ESPN only shares leagues that are set to public.'} Syncs week {week}.</p>
+        </>
+      )}
+    </Sheet>
   );
 }

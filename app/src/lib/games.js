@@ -11,7 +11,7 @@ export function groupByGame(week, weekData, now = Date.now()) {
   const put = (side, p, lg) => {
     const b = idx[p.team] === undefined ? bye : buckets[idx[p.team]];
     const key = p.team + '|' + p.name.toLowerCase();
-    if (!b[side][key]) b[side][key] = { name: p.name, pos: p.pos, team: p.team, leagues: [], uid: side + ':' + key };
+    if (!b[side][key]) b[side][key] = { name: p.name, pos: p.pos, team: p.team, sid: p.sid, eid: p.eid, leagues: [], uid: side + ':' + key };
     if (!b[side][key].leagues.includes(lg)) b[side][key].leagues.push(lg);
   };
   LEAGUE_NAMES.forEach(n => {
