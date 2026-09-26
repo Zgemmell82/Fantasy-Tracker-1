@@ -132,7 +132,12 @@ input { font: inherit; }
 .prow-check { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--surface-3); display: grid; place-items: center; transition: background .2s, border-color .2s; }
 .prow.done .prow-check { background: var(--mint); border-color: var(--mint); color: var(--mint-ink); }
 
-.avatar { flex: none; position: relative; display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pc) 55%, transparent); }
+.avatar { flex: none; position: relative; display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--surface-2); }
+/* Ring sits above the photo: green for your players, red for opponents. */
+.avatar::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; box-shadow: inset 0 0 0 2px var(--ring, color-mix(in srgb, var(--pc) 55%, transparent)); }
+.avatar.ring-mine { --ring: var(--mint); }
+.avatar.ring-opp { --ring: var(--coral); }
+.avatar.ring-mine::after, .avatar.ring-opp::after { box-shadow: inset 0 0 0 2.5px var(--ring); }
 .avatar img:not(.tlogo) { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 .pos { font-size: 10px; font-weight: 800; letter-spacing: 0.03em; padding: 2px 5px; border-radius: 5px; color: var(--pc); background: color-mix(in srgb, var(--pc) 16%, transparent); }
 .ltags { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 42%; }

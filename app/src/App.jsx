@@ -255,10 +255,10 @@ const TagList = ({ leagues }) => (
   </span>
 );
 
-function PlayerRow({ p, done, onToggle }) {
+function PlayerRow({ p, side, done, onToggle }) {
   return (
     <button className={'prow' + (done ? ' done' : '')} onClick={onToggle} aria-pressed={done}>
-      <Avatar p={p} />
+      <Avatar p={p} side={side} />
       <span className="prow-main">
         <span className="prow-name">{p.name}</span>
         <span className="prow-meta"><PosChip pos={p.pos} /><span>{p.team}</span></span>
@@ -317,13 +317,13 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
             {g.mine.length > 0 && (
               <div className="side">
                 <div className="side-h mint"><i />Your players</div>
-                {g.mine.map(p => <PlayerRow key={p.uid} p={p} done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+                {g.mine.map(p => <PlayerRow key={p.uid} p={p} side="mine" done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
               </div>
             )}
             {g.theirs.length > 0 && (
               <div className="side">
                 <div className="side-h coral"><i />Against you</div>
-                {g.theirs.map(p => <PlayerRow key={p.uid} p={p} done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+                {g.theirs.map(p => <PlayerRow key={p.uid} p={p} side="opp" done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
               </div>
             )}
           </section>
@@ -413,7 +413,7 @@ function EditSheet({ league, week, lineup, onEdit, onClose }) {
       <div className="list">
         {list.map(p => (
           <div key={p.id} className="lrow">
-            <Avatar p={p} size={34} />
+            <Avatar p={p} size={34} side={side} />
             <span className="lrow-main"><span className="lrow-name">{p.name}</span><span className="prow-meta"><PosChip pos={p.pos} /><span>{p.team}</span></span></span>
             <button className="round-btn remove" aria-label={'Remove ' + p.name} onClick={() => onEdit(l => { l[side] = l[side].filter(x => x.id !== p.id); })}><Icon.minus size={16} sw={2.5} /></button>
           </div>

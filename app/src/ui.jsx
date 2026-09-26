@@ -42,13 +42,14 @@ const LEAGUE_COLORS = ['#8b7cff', '#ffc043', '#35d49a', '#4fb6ff', '#ff7a59', '#
 export const leagueColor = (name, all) => LEAGUE_COLORS[Math.max(0, all.indexOf(name)) % LEAGUE_COLORS.length];
 
 // Player photo from Sleeper or ESPN when we know the id, else the team logo.
-export function Avatar({ p, size = 40 }) {
+// side 'mine' rings the photo green, 'opp' red; otherwise it takes the position colour.
+export function Avatar({ p, size = 40, side }) {
   const src = p.sid ? 'https://sleepercdn.com/content/nfl/players/thumb/' + p.sid + '.jpg'
     : p.eid ? 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + p.eid + '.png&w=96&h=70'
     : null;
   const [bad, setBad] = useState(false);
   return (
-    <span className="avatar" style={{ width: size, height: size, '--pc': posColor(p.pos) }}>
+    <span className={'avatar' + (side ? ' ring-' + side : '')} style={{ width: size, height: size, '--pc': posColor(p.pos) }}>
       {src && !bad
         ? <img src={src} alt="" loading="lazy" onError={() => setBad(true)} />
         : <TeamLogo team={p.team} size={Math.round(size * 0.62)} />}
