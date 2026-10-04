@@ -6,7 +6,17 @@ const ESPN_TEAM = { 1:'ATL',2:'BUF',3:'CHI',4:'CIN',5:'CLE',6:'DAL',7:'DEN',8:'D
 const BENCH = 20, IR = 21;
 
 // Converts one side of an ESPN matchup to starters.
-export function espnStarters(side) {
+// The player's fantasy points for the week: appliedStatTotal, else the matching actual-stats line.
+function playerPoints(e, week) {
+  const pe = e.playerPoolEntry || {};
+  if (typeof pe.appliedStatTotal === 'number') return pe.appliedStatTotal;
+  const stat = ((pe.player && pe.player.stats) || []).find(s => s.statSourceId === 0 && s.statSplitTypeId === 1 && (week == null || s.scoringPeriodId === week));
+  return stat && typeof stat.appliedTotal === 'number' ? stat.appliedTotal : null;
+}
+
+const sideTotal = side => side ? (side.totalPointsLive ?? side.totalPoints ?? null) : null;
+
+export function espnStarters(side, week) {
   return ((side && side.rosterForCurrentScoringPeriod && side.rosterForCurrentScoringPeriod.entries) || [])
     .filter(e => e.lineupSlotId !== BENCH && e.lineupSlotId !== IR)
     .map(e => {
@@ -15,6 +25,8 @@ export function espnStarters(side) {
       const t = ESPN_TEAM[p.proTeamId] || '';
       const out = { n: pos === 'DEF' ? defName(t) : p.fullName, p: pos, t };
       if (p.id && pos !== 'DEF') out.eid = p.id;
+      const pts = playerPoints(e, week);
+      if (pts != null) out.pts = pts;
       return out;
     });
 }
@@ -50,7 +62,8 @@ export async function syncEspn(leagueId, teamId, week, helper) {
   const g = (j.schedule || []).find(s => s.matchupPeriodId === week && ((s.home && s.home.teamId === tid) || (s.away && s.away.teamId === tid)));
   if (!g) throw new Error('No week ' + week + ' matchup for team ' + teamId + '.');
   const home = g.home.teamId === tid;
-  const res = { mine: espnStarters(home ? g.home : g.away), opp: espnStarters(home ? g.away : g.home) };
+  const meSide = home ? g.home : g.away, opSide = home ? g.away : g.home;
+  const res = { mine: espnStarters(meSide, week), opp: espnStarters(opSide, week), score: { mine: sideTotal(meSide), opp: sideTotal(opSide) } };
   if (!res.mine.length) throw new Error('ESPN returned no lineup yet for week ' + week + '.');
   return res;
 }

@@ -13,6 +13,7 @@ export function groupByGame(week, weekData, now = Date.now()) {
     const key = p.team + '|' + p.name.toLowerCase();
     if (!b[side][key]) b[side][key] = { name: p.name, pos: p.pos, team: p.team, sid: p.sid, eid: p.eid, leagues: [], uid: side + ':' + key };
     if (!b[side][key].leagues.includes(lg)) b[side][key].leagues.push(lg);
+    if (typeof p.pts === 'number') (b[side][key].pts = b[side][key].pts || {})[lg] = p.pts;
   };
   LEAGUE_NAMES.forEach(n => {
     const l = (weekData && weekData[n]) || { mine: [], opp: [] };
@@ -26,3 +27,20 @@ export function groupByGame(week, weekData, now = Date.now()) {
   }).filter(g => g.mine.length || g.theirs.length);
   return { games, bye: { mine: Object.values(bye.f), theirs: Object.values(bye.a) } };
 }
+
+// True while any game of the week is in progress (kickoff to about 3.5 hours later).
+export function liveNow(week, now = Date.now()) {
+  return SCHEDULE_ALL.some(g => {
+    if (g.w !== week) return false;
+    const t = new Date(g.t).getTime();
+    return now >= t && now < t + 3.5 * 3600000;
+  });
+}
+
+// Whether any game of the week has kicked off, so scores mean something.
+export function weekStarted(week, now = Date.now()) {
+  return SCHEDULE_ALL.some(g => g.w === week && now >= new Date(g.t).getTime());
+}
+
+// 18 → "18", 18.4 → "18.4", 18.416 → "18.42"
+export const fmtPts = n => String(Number(Number(n).toFixed(2)));

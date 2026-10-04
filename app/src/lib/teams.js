@@ -20,6 +20,7 @@ export function mkPlayer(p) {
     pos: String(p.p || p.pos || '').toUpperCase(),
     team: normTeam(p.t || p.team),
     ...(p.sid ? { sid: p.sid } : {}),
-    ...(p.eid ? { eid: p.eid } : {})
+    ...(p.eid ? { eid: p.eid } : {}),
+    ...(typeof p.pts === 'number' ? { pts: p.pts } : {})
   };
 }

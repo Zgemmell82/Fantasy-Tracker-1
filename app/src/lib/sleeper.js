@@ -98,5 +98,12 @@ export async function syncSleeper(username, leagueId, week) {
   const myIds = realIds(me.starters && me.starters.length ? me.starters : mine.starters);
   const opIds = realIds(opp && opp.starters);
   const players = await resolvePlayers(myIds.concat(opIds));
-  return { mine: players.slice(0, myIds.length), opp: players.slice(myIds.length) };
+  // players_points covers every rostered player that week, defenses included (keyed by team).
+  const pts = Object.assign({}, opp && opp.players_points, me.players_points);
+  const ids = myIds.concat(opIds);
+  players.forEach((p, i) => { if (typeof pts[ids[i]] === 'number') p.pts = pts[ids[i]]; });
+  return {
+    mine: players.slice(0, myIds.length), opp: players.slice(myIds.length),
+    score: { mine: me.custom_points ?? me.points ?? null, opp: opp ? (opp.custom_points ?? opp.points ?? null) : null }
+  };
 }

@@ -4,7 +4,7 @@ import { LS, load, save } from './lib/store.js';
 import { SEASON, WEEKS, currentWeek, seedWeek } from './lib/season.js';
 import { mkPlayer } from './lib/teams.js';
 import { Avatar, Icon, PosChip, Segmented, Sheet, Switch, TeamLogo, leagueColor } from './ui.jsx';
-import { groupByGame } from './lib/games.js';
+import { fmtPts, groupByGame, liveNow, weekStarted } from './lib/games.js';
 import { matchSleeperLeague, sleeperLeagues, syncSleeper } from './lib/sleeper.js';
 import { syncEspn } from './lib/espn.js';
 
@@ -22,6 +22,7 @@ const DEFAULT_CONN = {
 };
 const SRC_NAME = { sleeper: 'Sleeper', espn: 'ESPN', manual: 'By hand' };
 const RESYNC_MS = 15 * 60000;
+const LIVE_RESYNC_MS = 2 * 60000;
 
 // The built-in connections apply unless a league has been linked to something else.
 function mergeConn(saved) {
@@ -69,6 +70,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState('');
   const syncingRef = useRef(false);
+  const pendingRef = useRef(null);
   const toastTimer = useRef(0);
 
   const flash = useCallback(msg => {
@@ -81,7 +83,7 @@ export default function App() {
     setDb(prev => {
       const data = { ...prev.data };
       const wk = { ...(data[week] || seedWeek(week, data)) };
-      wk[league] = { mine: lineup.mine.map(mkPlayer), opp: lineup.opp.map(mkPlayer), how, at: Date.now() };
+      wk[league] = { mine: lineup.mine.map(mkPlayer), opp: lineup.opp.map(mkPlayer), how, at: Date.now(), ...(lineup.score ? { score: lineup.score } : {}) };
       data[week] = wk;
       return { ...prev, data };
     });
@@ -140,13 +142,14 @@ export default function App() {
 
   // auto: only leagues not synced in the last 15 minutes, and stay quiet unless something failed.
   const syncAll = useCallback(async (auto) => {
-    if (syncingRef.current) return;
+    // A sync asked for mid-sync (e.g. after switching weeks) runs once the current one ends.
+    if (syncingRef.current) { pendingRef.current = pendingRef.current === false ? false : !!auto; return; }
     const { conn, synced, week } = dbRef.current;
     const targets = LEAGUE_NAMES.filter(n => {
       if (!isLinked(conn[n])) return false;
       if (!auto) return true;
       const s = synced[n + ':' + week];
-      return !s || !s.ok || Date.now() - s.at > RESYNC_MS;
+      return !s || !s.ok || Date.now() - s.at > (liveNow(week) ? LIVE_RESYNC_MS : RESYNC_MS);
     });
     if (!targets.length) {
       if (!auto) flash('No connected leagues yet — tap Connect on a league.');
@@ -159,6 +162,7 @@ export default function App() {
     syncingRef.current = false;
     setSyncing(false);
     if (!auto || ok < targets.length) flash('Synced ' + ok + ' of ' + targets.length + ' connected leagues');
+    if (pendingRef.current !== null) { const next = pendingRef.current; pendingRef.current = null; syncAll(next); }
   }, [syncOne, flash]);
 
   // Refresh when the app opens, when the week changes, and when it comes back to the foreground.
@@ -166,7 +170,11 @@ export default function App() {
   useEffect(() => {
     const onVis = () => { if (document.visibilityState === 'visible') syncAll(true); };
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
+    // While games are live, keep points fresh: check every minute; syncAll waits 2 minutes between pulls.
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && liveNow(dbRef.current.week)) syncAll(true);
+    }, 60000);
+    return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(timer); };
   }, [syncAll]);
 
   const setWeek = w => setDb(prev => {
@@ -174,9 +182,9 @@ export default function App() {
     return { ...prev, week: w, data };
   });
 
-  const toggleScored = uid => setDb(prev => {
+  const toggleScored = (uid, auto) => setDb(prev => {
     const ws = { ...(prev.scored[prev.week] || {}) };
-    ws[uid] = !ws[uid];
+    ws[uid] = !isDone(ws[uid], auto);
     return { ...prev, scored: { ...prev.scored, [prev.week]: ws } };
   });
 
@@ -249,13 +257,23 @@ function WeekPills({ week, onPick }) {
   return <div className="weeks sc" ref={ref}><span className="weeks-l">WK</span>{pills}</div>;
 }
 
-const TagList = ({ leagues }) => (
+// A player's check mark: what you tapped wins; otherwise it ticks itself once the game is final and scored.
+const isDone = (tapped, auto) => tapped === undefined ? auto : tapped;
+
+const TagList = ({ leagues, pts, showPts }) => (
   <span className="ltags">
-    {leagues.map(l => <span key={l} className="ltag" style={{ '--lc': leagueColor(l, LEAGUE_NAMES) }}>{l}</span>)}
+    {leagues.map(l => {
+      const v = showPts && pts && typeof pts[l] === 'number' ? pts[l] : null;
+      return (
+        <span key={l} className={'ltag' + (v != null ? ' has-pts' : '')} style={{ '--lc': leagueColor(l, LEAGUE_NAMES) }}>
+          {l}{v != null && <b>{fmtPts(v)}</b>}
+        </span>
+      );
+    })}
   </span>
 );
 
-function PlayerRow({ p, side, done, onToggle }) {
+function PlayerRow({ p, side, done, showPts, onToggle }) {
   return (
     <button className={'prow' + (done ? ' done' : '')} onClick={onToggle} aria-pressed={done}>
       <Avatar p={p} side={side} />
@@ -263,7 +281,7 @@ function PlayerRow({ p, side, done, onToggle }) {
         <span className="prow-name">{p.name}</span>
         <span className="prow-meta"><PosChip pos={p.pos} /><span>{p.team}</span></span>
       </span>
-      <TagList leagues={p.leagues} />
+      <TagList leagues={p.leagues} pts={p.pts} showPts={showPts} />
       <span className="prow-check" aria-hidden="true">{done ? <Icon.check size={14} sw={3} /> : null}</span>
     </button>
   );
@@ -283,7 +301,7 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
   const all = shown.flatMap(g => g.mine.concat(g.theirs));
   const yours = shown.reduce((s, g) => s + g.mine.length, 0);
   const against = shown.reduce((s, g) => s + g.theirs.length, 0);
-  const done = all.filter(p => scored[p.uid]).length;
+  const done = shown.reduce((n, g) => n + g.mine.concat(g.theirs).filter(p => isDone(scored[p.uid], g.status === 'Final' && !!p.pts)).length, 0);
 
   return (
     <div className="stack">
@@ -317,13 +335,13 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
             {g.mine.length > 0 && (
               <div className="side">
                 <div className="side-h mint"><i />Your players</div>
-                {g.mine.map(p => <PlayerRow key={p.uid} p={p} side="mine" done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+                {g.mine.map(p => { const auto = g.status === 'Final' && !!p.pts; return <PlayerRow key={p.uid} p={p} side="mine" showPts={g.status !== 'Upcoming'} done={isDone(scored[p.uid], auto)} onToggle={() => onToggle(p.uid, auto)} />; })}
               </div>
             )}
             {g.theirs.length > 0 && (
               <div className="side">
                 <div className="side-h coral"><i />Against you</div>
-                {g.theirs.map(p => <PlayerRow key={p.uid} p={p} side="opp" done={!!scored[p.uid]} onToggle={() => onToggle(p.uid)} />)}
+                {g.theirs.map(p => { const auto = g.status === 'Final' && !!p.pts; return <PlayerRow key={p.uid} p={p} side="opp" showPts={g.status !== 'Upcoming'} done={isDone(scored[p.uid], auto)} onToggle={() => onToggle(p.uid, auto)} />; })}
               </div>
             )}
           </section>
@@ -368,7 +386,12 @@ function Leagues({ week, wk, conn, synced, syncing, onSync, onEdit, onConnect })
                   {c.source === 'espn' && c.private ? <> · <Icon.lock size={11} sw={2.5} /> Private</> : null}
                 </div>
               </div>
-              <div className="league-vs"><b>{l.mine.length}</b><span>vs</span><b>{l.opp.length}</b></div>
+              {l.score && l.score.mine != null && weekStarted(week)
+                ? <div className={'league-score' + (l.score.mine > l.score.opp ? ' up' : l.score.mine < l.score.opp ? ' down' : '')}>
+                    <b>{fmtPts(l.score.mine)}</b><span>–</span><b>{l.score.opp != null ? fmtPts(l.score.opp) : '—'}</b>
+                    <em>{liveNow(week) ? 'Live' : l.score.mine > l.score.opp ? 'Winning' : l.score.mine < l.score.opp ? 'Losing' : 'Tied'}</em>
+                  </div>
+                : <div className="league-vs"><b>{l.mine.length}</b><span>vs</span><b>{l.opp.length}</b></div>}
             </div>
             <div className={'league-status' + (failed ? ' err' : l.how ? ' ok' : '')}><StatusIcon size={14} sw={2.5} /><span>{status}</span></div>
             <div className="league-actions">
