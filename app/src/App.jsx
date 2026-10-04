@@ -7,6 +7,7 @@ import { Avatar, Icon, PosChip, Segmented, Sheet, Switch, TeamLogo, leagueColor 
 import { fmtPts, groupByGame, liveNow, weekStarted } from './lib/games.js';
 import { matchSleeperLeague, sleeperLeagues, syncSleeper } from './lib/sleeper.js';
 import { syncEspn } from './lib/espn.js';
+import { Feed, GameStatus, PlaysScreen, useScoreboard } from './Plays.jsx';
 
 function syncEspnFor(c, week, helper) {
   if (c.private && !helper) return Promise.reject(new Error('Private league: add your ESPN helper link under Connect.'));
@@ -193,6 +194,7 @@ export default function App() {
   const { week } = db;
   const wk = db.data[week] || {};
   const scoredWeek = db.scored[week] || {};
+  const { board, error: boardError } = useScoreboard(week, db.espnHelper, screen !== 'leagues');
 
   return (
     <div className="app">
@@ -200,7 +202,7 @@ export default function App() {
         <div className="head-row">
           <div>
             <div className="eyebrow">{SEASON} season</div>
-            <h1 className="title">{screen === 'games' ? 'Week ' + week : 'Leagues'}</h1>
+            <h1 className="title">{screen === 'games' ? 'Week ' + week : screen === 'plays' ? 'Plays' : 'Leagues'}</h1>
           </div>
           <button className={'icon-btn' + (syncing ? ' spinning' : '')} disabled={syncing} onClick={() => syncAll(false)} aria-label="Sync connected leagues">
             <Icon.refresh size={19} />
@@ -211,7 +213,9 @@ export default function App() {
 
       <main className="body" key={screen}>
         {screen === 'games'
-          ? <Games week={week} wk={wk} scored={scoredWeek} filter={filter} setFilter={setFilter} onToggle={toggleScored} />
+          ? <Games week={week} wk={wk} scored={scoredWeek} filter={filter} setFilter={setFilter} onToggle={toggleScored} board={board} helper={db.espnHelper} />
+          : screen === 'plays'
+          ? <PlaysScreen games={groupByGame(week, wk).games} board={board} boardError={boardError} helper={db.espnHelper} scored={scoredWeek} />
           : <Leagues week={week} wk={wk} conn={db.conn} synced={db.synced} syncing={syncing}
               onSync={async n => { if (await syncOne(n, week)) flash(n + ' synced'); }}
               onEdit={setEditFor} onConnect={setConnFor} />}
@@ -219,6 +223,7 @@ export default function App() {
 
       <nav className="tabbar">
         <button className={screen === 'games' ? 'on' : ''} onClick={() => setScreen('games')}><Icon.football size={23} /><span>Games</span></button>
+        <button className={screen === 'plays' ? 'on' : ''} onClick={() => setScreen('plays')}><Icon.activity size={23} /><span>Plays</span></button>
         <button className={screen === 'leagues' ? 'on' : ''} onClick={() => setScreen('leagues')}><Icon.trophy size={23} /><span>Leagues</span></button>
       </nav>
 
@@ -292,7 +297,8 @@ function StatusPill({ status }) {
   return <span className={'spill' + (status === 'Final' ? ' final' : '')}>{status}</span>;
 }
 
-function Games({ week, wk, scored, filter, setFilter, onToggle }) {
+function Games({ week, wk, scored, filter, setFilter, onToggle, board, helper }) {
+  const [pbp, setPbp] = useState(null);
   const { games, bye } = groupByGame(week, wk);
   const shown = games.filter(g => filter === 'all' || g.mine.length);
   if (filter === 'all' && (bye.mine.length || bye.theirs.length)) {
@@ -333,7 +339,7 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
                     <span className="at">@</span>
                     <TeamLogo team={home} size={30} /><span className="abbr">{home}</span>
                   </div>}
-              <StatusPill status={g.status} />
+              {g.bye ? <StatusPill status={g.status} /> : board[g.key] ? <GameStatus game={g} info={board[g.key]} /> : <StatusPill status={g.status} />}
             </div>
             <div className="game-time">{g.time}</div>
             {g.mine.length > 0 && (
@@ -347,6 +353,14 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
                 <div className="side-h coral"><i />Against you</div>
                 {g.theirs.map(p => { const auto = g.status === 'Final' && !!p.pts; return <PlayerRow key={p.uid} p={p} side="opp" showPts={g.status !== 'Upcoming'} done={isDone(scored[p.uid], auto)} onToggle={() => onToggle(p.uid, auto)} />; })}
               </div>
+            )}
+            {!g.bye && (
+              <>
+                <button className={'pbp-toggle' + (pbp === g.key ? ' open' : '')} onClick={() => setPbp(pbp === g.key ? null : g.key)} aria-expanded={pbp === g.key}>
+                  <Icon.activity size={15} sw={2.5} />Play-by-play<span className="chev"><Icon.chevron size={16} sw={2.5} /></span>
+                </button>
+                {pbp === g.key && <Feed game={g} info={board[g.key]} helper={helper} scored={scored} />}
+              </>
             )}
           </section>
         );

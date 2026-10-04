@@ -16,6 +16,7 @@ npm run build    # production build in dist/
 ## How it works
 
 - **By game** groups every league's starters by NFL game. A player you start in several leagues shows `×2`, `×3` and so on. Tap a player to cross them off.
+- **Plays** lists the games with your or your opponents' starters, live first, with ESPN's live score and clock. Tap one to drop down its play-by-play: **All**, **Players** (plays involving your tracked players, green for yours and red for theirs, with a rough half-PPR point estimate) or **Scoring**. Open live games refresh every 20 seconds. Game cards on **By game** have the same Play-by-play dropdown.
 - **Leagues** shows where each league's lineup came from, with Sync, Edit and Connect actions.
 - Built-in connections are in `src/App.jsx` (`DEFAULT_CONN`):
   - RDL and DFL come from Sleeper (user `Uncutgems82`). They're matched to Sleeper leagues by name or initials; if that fails, pick the right league once under Connect.

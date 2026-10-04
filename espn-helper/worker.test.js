@@ -23,3 +23,12 @@ test('refuses anything but league reads', async () => {
   assert.equal((await worker.fetch(new Request('https://h.workers.dev' + path + '111', { method: 'POST' }), env)).status, 405);
   assert.equal((await worker.fetch(new Request('https://h.workers.dev' + path + '111', { method: 'OPTIONS' }), env)).status, 200);
 });
+
+test('passes public NFL play-by-play through without cookies', async () => {
+  let seen;
+  globalThis.fetch = async (url, opts) => { seen = { url, opts }; return new Response('{"drives":{}}'); };
+  const res = await worker.fetch(new Request('https://h.workers.dev/apis/site/v2/sports/football/nfl/summary?event=401'), env);
+  assert.equal(res.status, 200);
+  assert.equal(seen.url, 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=401');
+  assert.equal(seen.opts.headers.Cookie, undefined);
+});

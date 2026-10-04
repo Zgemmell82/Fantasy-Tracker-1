@@ -10,10 +10,14 @@
 //   ALLOWED_ORIGIN  text    the site allowed to use this helper, e.g. https://zgemmell82.github.io
 //   LEAGUES         text    optional: comma-separated league IDs this helper may read
 //
-// It only forwards read-only league requests (GET) to ESPN's fantasy football API.
+// It only forwards read-only requests (GET): your listed fantasy leagues, plus ESPN's public NFL
+// scoreboard and play-by-play (no cookies are sent with those).
 
 const ESPN = 'https://lm-api-reads.fantasy.espn.com';
 const LEAGUE_PATH = /^\/apis\/v3\/games\/ffl\/seasons\/\d{4}\/segments\/0\/leagues\/(\d+)$/;
+// Public NFL scoreboard and play-by-play, used by the Plays tab if the phone can't reach ESPN directly.
+const SITE = 'https://site.api.espn.com';
+const GAME_PATH = /^\/apis\/site\/v2\/sports\/football\/nfl\/(scoreboard|summary)$/;
 
 export default {
   async fetch(request, env) {
@@ -31,6 +35,10 @@ export default {
 
     const url = new URL(request.url);
     if (url.pathname === '/') return reply(200, 'ESPN helper is running.');
+    if (GAME_PATH.test(url.pathname)) {
+      const res = await fetch(SITE + url.pathname + url.search, { headers: { Accept: 'application/json' } });
+      return new Response(res.body, { status: res.status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
     const m = url.pathname.match(LEAGUE_PATH);
     if (!m) return reply(404, 'Not an ESPN league request.');
     const allowed = String(env.LEAGUES || '').split(',').map(s => s.trim()).filter(Boolean);
