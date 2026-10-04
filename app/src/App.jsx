@@ -298,15 +298,19 @@ function Games({ week, wk, scored, filter, setFilter, onToggle }) {
   if (filter === 'all' && (bye.mine.length || bye.theirs.length)) {
     shown.push({ key: 'bye', bye: true, title: 'Bye or unmatched', time: 'No game this week for these teams', status: 'Check', ...bye });
   }
-  const all = shown.flatMap(g => g.mine.concat(g.theirs));
-  const yours = shown.reduce((s, g) => s + g.mine.length, 0);
-  const against = shown.reduce((s, g) => s + g.theirs.length, 0);
-  const done = shown.reduce((n, g) => n + g.mine.concat(g.theirs).filter(p => isDone(scored[p.uid], g.status === 'Final' && !!p.pts)).length, 0);
+  // Totals cover the whole week whatever the filter, and count lineup spots: a player started
+  // in two leagues fills two spots, so with full lineups both sides come out equal.
+  const everyGame = games.concat([{ status: 'Check', ...bye }]);
+  const all = everyGame.flatMap(g => g.mine.concat(g.theirs));
+  const spots = list => list.reduce((n, p) => n + p.leagues.length, 0);
+  const yours = everyGame.reduce((n, g) => n + spots(g.mine), 0);
+  const against = everyGame.reduce((n, g) => n + spots(g.theirs), 0);
+  const done = everyGame.reduce((n, g) => n + g.mine.concat(g.theirs).filter(p => isDone(scored[p.uid], g.status === 'Final' && !!p.pts)).length, 0);
 
   return (
     <div className="stack">
       <div className="card summary">
-        <div className="sum-cell"><span className="sum-n">{shown.filter(g => !g.bye).length}</span><span className="sum-l">Games</span></div>
+        <div className="sum-cell"><span className="sum-n">{games.length}</span><span className="sum-l">Games</span></div>
         <div className="sum-cell"><span className="sum-n mint">{yours}</span><span className="sum-l">Your starters</span></div>
         <div className="sum-cell"><span className="sum-n coral">{against}</span><span className="sum-l">Against you</span></div>
         <div className="sum-bar" aria-label={done + ' of ' + all.length + ' checked off'}>
